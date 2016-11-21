@@ -4,8 +4,32 @@ import (
   "fmt"
   "net"
   "os"
+  "path/filepath"
   "strconv"
-  "time"
+  "strings"
+)
+
+type Request struct {
+  method string
+  path string
+  version string
+}
+
+type Response struct {
+  status string
+  contentType string
+  body []byte
+}
+
+const (
+  OK = "200 OK"
+  NOT_FOUND = "404 Not Found"
+)
+
+const (
+  PLAIN = "text/plain"
+  HTML = "text/html"
+  PNG = "image/png"
 )
 
 func Start(address string, port int) {
@@ -34,31 +58,92 @@ func listen(listener *net.TCPListener) {
 }
 
 func response(conn net.Conn) {
-  fmt.Printf("connection start. remoteAddr=%s\n", conn.RemoteAddr())
+  request := parseRequest(conn)
 
-  body := `<html>
+  fmt.Printf("connection start. requestPath=%s, remoteAddr=%s\n", request.path, conn.RemoteAddr())
+
+  // TODO read rule
+  targetFile := "public"
+  if (request.path == "/") {
+    targetFile += "/index.html"
+  } else {
+    targetFile += request.path
+  }
+  file, err := os.Open(targetFile)
+
+  response := Response{}
+  if err == nil {
+    response.status = OK
+    response.contentType = findContentType(targetFile)
+    for {
+      bytes := make([]byte, 1024)
+      _, err := file.Read(bytes)
+      response.body = append(response.body, bytes...)
+      if err != nil {
+        break
+      }
+    }
+  } else {
+    fmt.Printf("ERROR! %s\n", err)
+    response.status = NOT_FOUND
+    response.contentType = HTML
+    response.body = []byte(`<html>
+<head>
+  <meta charset="utf-8">
+  <title>404 Not Found</title>
+</head>
 <body>
-<h1>Hello, World!</h1>
+  <p>404 Not Found! 😇</p>
 </body>
-</html>`
-  time.Sleep(5 * time.Second)
-  output(conn, "200 OK", body)
+</html>`)
+  }
 
+  write(conn, response)
   fmt.Printf("connection close.\n")
 }
 
-func output(conn net.Conn, status string, body string) {
+func parseRequest(conn net.Conn) Request {
+  requestStr := ""
+  for {
+    buffer := make([]byte, 1024)
+    length, _ := conn.Read(buffer)
+    requestStr += string(buffer[:length])
+    if strings.HasSuffix(requestStr, "\r\n\r\n") {
+      break
+    }
+  }
+  rows := strings.Split(requestStr, "\r\n")
+  params := strings.Split(rows[0], " ")
+  request := Request{}
+  request.method = params[0]
+  request.path = params[1]
+  request.version = params[2]
+  // TODO read headers
+  return request
+}
+
+func findContentType(filePath string) string {
+  ext := filepath.Ext(filePath)
+  switch ext {
+    case ".html": return HTML
+    case ".png": return PNG
+    default: return PLAIN
+  }
+}
+
+func write(conn net.Conn, response Response) {
   defer conn.Close()
-  message := "HTTP/1.1 " + status
-  message += "\r\n"
-  message += "Content-Type: text/html"
-  message += "\r\n"
-  message += "Content-Length: " + strconv.Itoa(len(body))
-  message += "\r\n"
-  message += "\r\n"
-  message += body
-  message += "\r\n"
-  conn.Write([]byte(message))
+  header := "HTTP/1.1 " + response.status
+  header += "\r\n"
+  header += "Content-Type: " + response.contentType
+  header += "\r\n"
+  header += "Content-Length: " + strconv.Itoa(len(response.body))
+  header += "\r\n"
+  // TODO add extra headers
+  header += "\r\n"
+  conn.Write([]byte(header))
+  conn.Write(response.body)
+  conn.Write([]byte("\r\n"))
 }
 
 func checkError(err error) {
