@@ -11,5 +11,5 @@ func main() {
   server := flag.Arg(0)
   portStr := flag.Arg(1)
   port, _ := strconv.Atoi(portStr)
-  ss5.Start(server, port)
+  ss5.StartServer(server, port)
 }
