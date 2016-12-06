@@ -1,0 +1,4 @@
+[Public]
+path      = "public"
+index     = "index.html"
+notFound  = "404.html"

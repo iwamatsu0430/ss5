@@ -11,3 +11,13 @@ type Response struct {
   contentType string
   body []byte
 }
+
+type Config struct {
+  Public PublicConfig
+}
+
+type PublicConfig struct {
+  Path      string
+  Index     string
+  NotFound  string
+}

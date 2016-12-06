@@ -1,50 +1,52 @@
 package ss5
 
 import (
-  "fmt"
   "os"
   "path/filepath"
 )
 
 func FileServer(request Request) (response Response) {
-  // TODO read from config
-  targetFile := "public"
+  var targetPath string
   if (request.path == "/") {
-    // TODO read from config
-    targetFile += "/index.html"
+    targetPath = config.Public.Path + "/" + config.Public.Index
   } else {
-    targetFile += request.path
+    targetPath = config.Public.Path + "/" + request.path
   }
-  file, err := os.Open(targetFile)
 
-  if err == nil {
+  err := LoadFile(targetPath, &response.body)
+  if err != nil {
+    response.status = NOT_FOUND
+    targetPath = config.Public.Path + "/" + config.Public.NotFound
+    err := LoadFile(targetPath, &response.body)
+    if err != nil {
+      // TODO to const
+      targetPath = "resources/views/defaults/404.html"
+      err := LoadFile(targetPath, &response.body)
+      if err != nil {
+        // TODO break
+      }
+    }
+  } else {
     response.status = OK
-    response.contentType = FindContentType(targetFile)
+  }
+  response.contentType = FindContentType(targetPath)
+
+  return response
+}
+
+func LoadFile(filePath string, fileBytes *[]byte) error {
+  file, err := os.Open(filePath)
+  if err == nil {
     for {
       bytes := make([]byte, 1024)
       _, err := file.Read(bytes)
-      response.body = append(response.body, bytes...)
+      *fileBytes = append(*fileBytes, bytes...)
       if err != nil {
         break
       }
     }
-  } else {
-    // TODO route by config
-    fmt.Printf("ERROR! %s\n", err)
-    response.status = NOT_FOUND
-    response.contentType = HTML
-    response.body = []byte(`<html>
-<head>
-  <meta charset="utf-8">
-  <title>404 Not Found</title>
-</head>
-<body>
-  <p>404 Not Found! 😇</p>
-</body>
-</html>`)
   }
-
-  return response
+  return err
 }
 
 func FindContentType(filePath string) string {

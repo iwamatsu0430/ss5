@@ -6,7 +6,10 @@ import (
   "os"
   "strconv"
   "strings"
+  "github.com/BurntSushi/toml"
 )
+
+var config Config
 
 func StartServer(address string, port int) {
   checkError := func (err error) {
@@ -15,11 +18,17 @@ func StartServer(address string, port int) {
   		os.Exit(1)
     }
   }
+
+  _, err := toml.DecodeFile("config.toml", &config)
+  checkError(err)
+
   portStr := strconv.Itoa(port)
   tcpAddr, err := net.ResolveTCPAddr("tcp", ":" + portStr)
   checkError(err)
+
 	listener, err := net.ListenTCP("tcp", tcpAddr)
   checkError(err)
+
   fmt.Printf("Server Start. Access http://%s:%s/\n", address, portStr)
   Listen(listener)
 }
@@ -38,13 +47,12 @@ func Listen(listener *net.TCPListener) {
 func CreateResponse(conn net.Conn) {
   request := ParseRequest(conn)
 
-  fmt.Printf("connection start. requestPath=%s, remoteAddr=%s\n", request.path, conn.RemoteAddr())
+  fmt.Printf("connected. requestPath=%s, remoteAddr=%s\n", request.path, conn.RemoteAddr())
 
   // TODO route by config
   response := FileServer(request)
 
   WriteResponse(conn, response)
-  fmt.Printf("connection close.\n")
 }
 
 func ParseRequest(conn net.Conn) Request {
