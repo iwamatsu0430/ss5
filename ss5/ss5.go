@@ -4,6 +4,7 @@ import (
   "fmt"
   "net"
   "os"
+  "time"
   "strconv"
   "strings"
   "github.com/BurntSushi/toml"
@@ -47,7 +48,7 @@ func Listen(listener *net.TCPListener) {
 func CreateResponse(conn net.Conn) {
   request := ParseRequest(conn)
 
-  fmt.Printf("connected. requestPath=%s, remoteAddr=%s\n", request.path, conn.RemoteAddr())
+  fmt.Printf("======================= connected. requestPath=%s, remoteAddr=%s =======================\n", request.path, conn.RemoteAddr())
 
   // TODO route by config
   response := FileServer(request)
@@ -55,23 +56,62 @@ func CreateResponse(conn net.Conn) {
   WriteResponse(conn, response)
 }
 
-func ParseRequest(conn net.Conn) Request {
-  requestStr := ""
+func ParseRequest(conn net.Conn) (request Request) {
+
+  var requestBytes []byte
+  bufferLength := 1024
   for {
-    buffer := make([]byte, 1024)
+    buffer := make([]byte, bufferLength)
+    conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
     length, _ := conn.Read(buffer)
-    requestStr += string(buffer[:length])
-    if strings.HasSuffix(requestStr, "\r\n\r\n") {
+    requestBytes = append(requestBytes, buffer...)
+    fmt.Println("Length: ", length)
+    if length < bufferLength {
       break
     }
   }
-  rows := strings.Split(requestStr, "\r\n")
-  params := strings.Split(rows[0], " ")
-  request := Request{}
-  request.method = params[0]
-  request.path = params[1]
-  request.version = params[2]
-  // TODO read headers
+
+  requestStr := string(requestBytes[:len(requestBytes)])
+  // headerBodies := strings.Split(requestStr, "\r\n\r\n")
+
+  // firstLineParams := strings.Split(rows[0], " ")
+  // request.method = firstLineParams[0]
+  // request.path = firstLineParams[1]
+  // request.version = firstLineParams[2]
+  strings.Split(",", " ")
+  fmt.Printf("\n%s\n\n", requestStr)
+  request.path = "/"
+
+  // requestStr := ""
+  // for {
+  //   buffer := make([]byte, 1024)
+  //   conn.SetReadDeadline(time.Now().Add(10 * time.Millisecond))
+  //   length, _ := conn.Read(buffer)
+  //   requestStr += string(buffer[:length])
+  //   if length == 0 {
+  //     break
+  //   }
+  //   // if strings.HasSuffix(requestStr, "\r\n\r\n") {
+  //   //   break
+  //   // }
+  // }
+  // rows := strings.Split(requestStr, "\r\n")
+  //
+  // firstLineParams := strings.Split(rows[0], " ")
+  // request.method = firstLineParams[0]
+  // request.path = firstLineParams[1]
+  // request.version = firstLineParams[2]
+  //
+  // headers := map[string]string{}
+  // for i, _ := range rows[1:] {
+  //   if rows[i] == "" {
+  //     break
+  //   }
+  //   keyValues := strings.Split(rows[i], ":")
+  //   headers[keyValues[0]] = strings.Join(keyValues[1:], ":")
+  //   fmt.Printf("header = %s, values = %s\n", keyValues[0], strings.Join(keyValues[1:], ":"))
+  // }
+
   return request
 }
 
