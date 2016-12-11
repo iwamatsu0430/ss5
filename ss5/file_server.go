@@ -7,29 +7,28 @@ import (
 
 func FileServer(request Request) (response Response) {
   var targetPath string
-  if (request.path == "/") {
+  if (request.Path == "/") {
     targetPath = config.Public.Path + "/" + config.Public.Index
   } else {
-    targetPath = config.Public.Path + "/" + request.path
+    targetPath = config.Public.Path + "/" + request.Path
   }
 
-  err := LoadFile(targetPath, &response.body)
+  err := LoadFile(targetPath, &response.Body)
   if err != nil {
-    response.status = NOT_FOUND
+    response.Status = HTTP_STATUS_404
     targetPath = config.Public.Path + "/" + config.Public.NotFound
-    err := LoadFile(targetPath, &response.body)
+    err := LoadFile(targetPath, &response.Body)
     if err != nil {
-      // TODO to const
-      targetPath = "resources/views/defaults/404.html"
-      err := LoadFile(targetPath, &response.body)
+      targetPath = SS5_DEFAULT_404
+      err := LoadFile(targetPath, &response.Body)
       if err != nil {
-        // TODO break
+        Exit("ss5 default 404 page not found!")
       }
     }
   } else {
-    response.status = OK
+    response.Status = HTTP_STATUS_200
   }
-  response.contentType = FindContentType(targetPath)
+  response.ContentType = FindContentType(targetPath)
 
   return response
 }
@@ -52,13 +51,13 @@ func LoadFile(filePath string, fileBytes *[]byte) error {
 func FindContentType(filePath string) string {
   ext := filepath.Ext(filePath)
   switch ext {
-    case ".html", ".htm": return HTML
-    case ".csv": return CSV
-    case ".js": return JS
-    case ".json": return JSON
-    case ".jpg", ".jpeg": return JPG
-    case ".png": return PNG
-    case ".gif": return GIF
-    default: return PLAIN
+    case ".html", ".htm": return CONTENT_TYPE_HTML
+    case ".csv": return CONTENT_TYPE_CSV
+    case ".js": return CONTENT_TYPE_JS
+    case ".json": return CONTENT_TYPE_JSON
+    case ".jpg", ".jpeg": return CONTENT_TYPE_JPG
+    case ".png": return CONTENT_TYPE_PNG
+    case ".gif": return CONTENT_TYPE_GIF
+    default: return CONTENT_TYPE_PLAIN
   }
 }

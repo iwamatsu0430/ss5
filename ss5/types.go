@@ -1,15 +1,29 @@
 package ss5
 
 type Request struct {
-  method string
-  path string
-  version string
+  Method string
+  Path string
+  Version string
+  Headers map[string]string
+  ContentType string
+  Boundary string
+  Body []byte
+  Forms []RequestForm
+}
+
+type RequestForm struct {
+  Name string
+  FileName string
+  ContentDisposition string
+  ContentType string
+  Body []byte
 }
 
 type Response struct {
-  status string
-  contentType string
-  body []byte
+  Status string
+  ContentType string
+  Headers map[string]string
+  Body []byte
 }
 
 type Config struct {

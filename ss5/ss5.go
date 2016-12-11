@@ -1,10 +1,10 @@
 package ss5
 
 import (
+  "bytes"
   "fmt"
   "net"
   "os"
-  "time"
   "strconv"
   "strings"
   "github.com/BurntSushi/toml"
@@ -13,10 +13,10 @@ import (
 var config Config
 
 func StartServer(address string, port int) {
+
   checkError := func (err error) {
     if err != nil {
-      fmt.Fprintf(os.Stderr, "[ERROR]: %s\n", err.Error())
-  		os.Exit(1)
+      Exit(err.Error())
     }
   }
 
@@ -48,84 +48,139 @@ func Listen(listener *net.TCPListener) {
 func CreateResponse(conn net.Conn) {
   request := ParseRequest(conn)
 
-  fmt.Printf("======================= connected. requestPath=%s, remoteAddr=%s =======================\n", request.path, conn.RemoteAddr())
-
   // TODO route by config
   response := FileServer(request)
 
   WriteResponse(conn, response)
 }
 
-func ParseRequest(conn net.Conn) (request Request) {
-
-  var requestBytes []byte
+func ReadRequest(conn net.Conn) (requestBytes []byte) {
   bufferLength := 1024
   for {
     buffer := make([]byte, bufferLength)
-    conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
     length, _ := conn.Read(buffer)
     requestBytes = append(requestBytes, buffer...)
-    fmt.Println("Length: ", length)
     if length < bufferLength {
-      break
+      return requestBytes
     }
   }
+}
 
+func ParseRequest(conn net.Conn) (request Request) {
+
+  requestBytes := ReadRequest(conn)
   requestStr := string(requestBytes[:len(requestBytes)])
-  // headerBodies := strings.Split(requestStr, "\r\n\r\n")
+  rows := strings.Split(requestStr, "\r\n")
 
-  // firstLineParams := strings.Split(rows[0], " ")
-  // request.method = firstLineParams[0]
-  // request.path = firstLineParams[1]
-  // request.version = firstLineParams[2]
-  strings.Split(",", " ")
-  fmt.Printf("\n%s\n\n", requestStr)
-  request.path = "/"
+  // parse first line params
+  firstLineParams := strings.Split(rows[0], " ")
+  request.Method = firstLineParams[0]
+  request.Path = firstLineParams[1]
+  request.Version = firstLineParams[2]
 
-  // requestStr := ""
-  // for {
-  //   buffer := make([]byte, 1024)
-  //   conn.SetReadDeadline(time.Now().Add(10 * time.Millisecond))
-  //   length, _ := conn.Read(buffer)
-  //   requestStr += string(buffer[:length])
-  //   if length == 0 {
-  //     break
-  //   }
-  //   // if strings.HasSuffix(requestStr, "\r\n\r\n") {
-  //   //   break
-  //   // }
-  // }
-  // rows := strings.Split(requestStr, "\r\n")
-  //
-  // firstLineParams := strings.Split(rows[0], " ")
-  // request.method = firstLineParams[0]
-  // request.path = firstLineParams[1]
-  // request.version = firstLineParams[2]
-  //
-  // headers := map[string]string{}
-  // for i, _ := range rows[1:] {
-  //   if rows[i] == "" {
-  //     break
-  //   }
-  //   keyValues := strings.Split(rows[i], ":")
-  //   headers[keyValues[0]] = strings.Join(keyValues[1:], ":")
-  //   fmt.Printf("header = %s, values = %s\n", keyValues[0], strings.Join(keyValues[1:], ":"))
-  // }
+  // parse request header
+  headerStrs := rows[1:]
+  request.Headers = map[string]string{}
+  for i := range headerStrs {
+    if headerStrs[i] == "" {
+      break
+    }
+    keyValues := strings.Split(headerStrs[i], ":")
+    request.Headers[keyValues[0]] = strings.TrimSpace( strings.Join(keyValues[1:], ":") )
+  }
+
+  // parse content type
+  contentTypes := strings.Split(request.Headers["Content-Type"], ";")
+  request.ContentType = contentTypes[0]
+
+  // read request more
+  isMore := false
+  // TODO use const
+  switch request.Method {
+    case "POST", "PUT", "DELETE": isMore = true
+  }
+  switch request.ContentType {
+    case "multipart/form-data": isMore = true
+  }
+  if isMore {
+    request.Boundary = strings.Split(contentTypes[1], "=")[1]
+    ParseRequestBody(conn, &request)
+  }
 
   return request
 }
 
+func ParseRequestBody(conn net.Conn, request *Request) {
+  request.Body = ReadRequest(conn)
+  fmt.Println(string(request.Body[:len(request.Body)]))
+
+  // parse request form
+  forms := bytes.Split(request.Body, []byte(request.Boundary))
+  newline := []byte("\r\n")
+  colon := []byte(":")
+  semiColon := []byte(";")
+  equal := []byte("=")
+  for i := range forms {
+    form := RequestForm{}
+    rows := bytes.Split(forms[i], newline)
+    for j := range rows {
+      if len(rows[j]) == 0 {
+        if len(rows) >= j {
+          form.Body = bytes.Join(rows[j:], newline)
+        }
+        break
+      }
+      keyValues := bytes.Split(rows[j], colon)
+      key := keyValues[0]
+      if len(keyValues) <= 1 {
+        // Invalid format
+        break
+      }
+      values := bytes.Split(bytes.Join(keyValues[1:], colon), semiColon)
+      switch string(key[:len(key)]) {
+        case "Content-Disposition": func() {
+          form.ContentDisposition = string(values[0])
+          if len(values) <= 1 {
+            // break
+          }
+          otherParams := values[1:]
+          for k := range otherParams {
+            innerKeyValue := bytes.Split(otherParams[k], equal)
+            if len(innerKeyValue) <= 1 {
+              break
+            }
+            innerValue := string(bytes.Join(innerKeyValue[1:], equal))
+            switch string(innerKeyValue[0]) {
+              case "name": form.Name = innerValue
+              case "filename": form.FileName = innerValue
+            }
+          }
+        }()
+        case "Content-Type": // form.ContentType =
+      }
+    }
+  }
+}
+
 func WriteResponse(conn net.Conn, response Response) {
   defer conn.Close()
-  header := "HTTP/1.1 " + response.status
+  header := "HTTP/1.1 " + response.Status
   header += "\r\n"
-  header += "Content-Type: " + response.contentType
+  header += "Content-Type: " + response.ContentType
   header += "\r\n"
-  header += "Content-Length: " + strconv.Itoa(len(response.body))
+  header += "Content-Length: " + strconv.Itoa(len(response.Body))
   header += "\r\n"
-  // TODO add extra headers
+  for k, v := range response.Headers {
+    header += k + ": " + v
+    header += "\r\n"
+  }
   header += "\r\n"
   conn.Write([]byte(header))
-  conn.Write(response.body)
+  conn.Write(response.Body)
   conn.Write([]byte("\r\n"))
+}
+
+func Exit(message string) {
+  fmt.Fprintf(os.Stderr, "[ERROR]: %s\n", message)
+  os.Exit(1)
 }
