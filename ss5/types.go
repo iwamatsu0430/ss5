@@ -6,6 +6,7 @@ type Request struct {
   Version string
   Headers map[string]string
   ContentType string
+  ContentLength int
   Boundary string
   Body []byte
   Forms []RequestForm
